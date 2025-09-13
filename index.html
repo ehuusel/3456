@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="referrer" content="no-referrer" />
   <title>Кино сан — Native player</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -10,7 +11,8 @@
       --bg:#0b0b0b; --card:#111827; --muted:#94a3b8; --accent:#22d3ee;
       --cell-min:190px; --ratio:9/16; --overlay-alpha:.60;
     }
-    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:#e5e7eb}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:#e5e7eb;padding-top:env(safe-area-inset-top);padding-bottom:calc(12px + env(safe-area-inset-bottom))}
     .container{max-width:1100px;margin:0 auto;padding:16px}
     header{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px}
     .logo{display:flex;align-items:center;gap:10px;font-weight:700}
@@ -24,8 +26,9 @@
     .badge{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;font-size:.72rem}
     .title-overlay{position:absolute;left:0;right:0;bottom:0;padding:10px 12px;background:rgba(0,0,0,var(--overlay-alpha));pointer-events:none;min-height:48px;display:flex;align-items:end}
     .title{margin:0;background:transparent;color:#fff;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,.6), 0 0 1px rgba(0,0,0,.5)}
+
     dialog{border:none;background:transparent;width:min(980px,92vw)}
-    dialog::backdrop{background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}
+    dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
     .stage{background:#0b0f1a;border:1px solid #1f2937;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.4)}
     .stage-inner{position:relative;aspect-ratio:var(--ratio);width:min(640px,86vw);max-height:78dvh;margin:auto}
     .player-iframe,.player-video{position:absolute;inset:0;width:100%;height:100%;border:0}
@@ -35,9 +38,12 @@
     .btn:hover{background:#0f172a}
     .row{display:flex;align-items:center;gap:10px}
     .note{font-size:.9rem;color:var(--muted)}
-  
-    /* Mobile polish */
-    body{padding-top:env(safe-area-inset-top);padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+
+    /* loader */
+    .loader{position:absolute;inset:0;display:grid;place-items:center;background:#0004}
+    .loader span{width:34px;height:34px;border-radius:50%;border:3px solid #ffffff40;border-top-color:#fff;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
     @media (max-width: 640px){
       .container{padding:10px 12px}
       header{flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:8px}
@@ -51,7 +57,6 @@
       .controls{flex-wrap:wrap;gap:8px}
       .btn{padding:7px 10px}
     }
-
   </style>
 </head>
 <body>
@@ -62,141 +67,183 @@
     </header>
     <main>
       <section class="grid" id="grid"></section>
-      <p class="note">Зөвлөмж: Google Drive preview бол ерөнхий тоглуулагч тул ABR/HLS байхгүй, портрет бичлэг дээр хар зах ирдэг. MP4/HLS өгвөл доорх тоглуулагч нь илүү цэвэр тоглоно.</p>
+      <p class="note">Зөвлөмж: Google Drive preview нь ABR/HLS дэмждэггүй. Боломжтой бол MP4/HLS линк өгвөл илүү тогтвортой тоглоно.</p>
     </main>
   </div>
 
   <dialog id="player">
     <div class="stage">
       <div class="stage-inner" id="stage">
-        <iframe id="frame" class="player-iframe" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+        <div id="spinner" class="loader" hidden><span></span></div>
+        <iframe id="frame" class="player-iframe"
+          allow="autoplay; fullscreen; picture-in-picture; encrypted-media; clipboard-write"
+          allowfullscreen
+          loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-presentation">
+        </iframe>
         <video id="video" class="player-video" controls playsinline preload="metadata"></video>
       </div>
       <div class="controls">
         <div class="row">
           <button class="btn" id="openDrive">Drive дээр нээх</button>
+          <button class="btn" id="download" hidden>MP4 татах</button>
           <button class="btn" id="fs">Fullscreen</button>
         </div>
         <div id="playerTitle" class="muted"></div>
-        <button class="btn" id="close">X</button>
+        <button class="btn" id="close" aria-label="Хаах">X</button>
       </div>
     </div>
   </dialog>
 
   <script>
-  // --- DATA ---
+/* ---------- DATA ---------- */
 const MOVIES = [
-  // 1) Drive preview
   {
     id: "1WFJDNSCDUbmW4Kyw0DLYot6JZBP9DkXq",
     title: "Нарийн бичгийн ТАЧААЛ",
     thumb: "https://drive.google.com/thumbnail?id=1WFJDNSCDUbmW4Kyw0DLYot6JZBP9DkXq&sz=w1280",
     preview: "https://drive.google.com/file/d/1WFJDNSCDUbmW4Kyw0DLYot6JZBP9DkXq/preview",
-    drivePage: "https://drive.google.com/file/d/1WFJDNSCDUbmW4Kyw0DLYot6JZBP9DkXq/view",
+    drivePage: "https://drive.google.com/file/d/1WFJDNSCDUbmW4Kyw0DLYot6JZBP9DkXq/view"
   },
-
-  // 2) Demo MP4 (native)
   {
     id: "demo1",
     title: "Demo MP4 (native)",
     thumb: "https://picsum.photos/seed/native/800/1200",
     mp4: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
     preview: "",
-    drivePage: "",
+    drivePage: ""
   },
-
-  // 3) YouTube (embed)
   {
     id: "хүлэг",
     title: "окэ",
     thumb: "https://img.youtube.com/vi/9l2jFRbDBro/maxresdefault.jpg",
     preview: "https://www.youtube-nocookie.com/embed/9l2jFRbDBro?rel=0&modestbranding=1",
-    drivePage: "https://www.youtube.com/watch?v=9l2jFRbDBro",
+    drivePage: "https://www.youtube.com/watch?v=9l2jFRbDBro"
   },
-
-  // 4) Шинэ: Drive видео (таны FILE_ID)
   {
     id: "1yUZlANn62n5jDFJDdknib7BJqcNg5MAm",
     title: "Ирээдүйгээс ирсэн ТАНХАЙ ЗАЛУУ",
     thumb: "https://drive.google.com/thumbnail?id=1yUZlANn62n5jDFJDdknib7BJqcNg5MAm&sz=w1280",
     preview: "https://drive.google.com/file/d/1yUZlANn62n5jDFJDdknib7BJqcNg5MAm/preview",
     drivePage: "https://drive.google.com/file/d/1yUZlANn62n5jDFJDdknib7BJqcNg5MAm/view?usp=drive_link",
-    // Зарим тоглуулагч дээр OK, заримд нь CORS/Range асуудал гарч болно
-    mp4: "https://drive.google.com/uc?export=download&id=1yUZlANn62n5jDFJDdknib7BJqcNg5MAm",
-  },
+    mp4: "https://drive.google.com/uc?export=download&id=1yUZlANn62n5jDFJDdknib7BJqcNg5MAm"
+  }
 ];
 
-// export default MOVIES; // Хэрэв модулиар ашиглах бол
+/* ---------- RENDER GRID ---------- */
+const grid = document.getElementById('grid');
+function render(){
+  MOVIES.forEach((m,i)=>{
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-wrap">
+        <span class="badge">${i+1}</span>
+        <img class="thumb" src="${m.thumb}" alt="${m.title}" loading="lazy">
+        <div class="title-overlay"><div class="title">${m.title}</div></div>
+      </div>`;
+    card.addEventListener('click', ()=> openPlayer(m));
+    grid.appendChild(card);
+  });
+}
+render();
 
-  // --- RENDER ---
-  const grid = document.getElementById('grid');
-  function render(){
-    MOVIES.forEach((m,i)=>{
-      const card = document.createElement('article');
-      card.className = 'card';
-      card.innerHTML = `
-        <div class="card-wrap">
-          <span class="badge">${i+1}</span>
-          <img class="thumb" src="${m.thumb}" alt="${m.title}" loading="lazy">
-          <div class="title-overlay"><div class="title">${m.title}</div></div>
-        </div>`;
-      card.addEventListener('click', ()=> openPlayer(m));
-      grid.appendChild(card);
-    });
-  } render();
+/* ---------- PLAYER LOGIC ---------- */
+const dlg = document.getElementById('player');
+const frame = document.getElementById('frame');
+const video = document.getElementById('video');
+const titleEl = document.getElementById('playerTitle');
+const openDriveBtn = document.getElementById('openDrive');
+const fsBtn = document.getElementById('fs');
+const stage = document.getElementById('stage');
+const closeBtn = document.getElementById('close');
+const spinner = document.getElementById('spinner');
+const dlBtn = document.getElementById('download');
 
-  // --- PLAYER LOGIC ---
-  const dlg = document.getElementById('player');
-  const frame = document.getElementById('frame');
-  const video = document.getElementById('video');
-  const titleEl = document.getElementById('playerTitle');
-  const openDriveBtn = document.getElementById('openDrive');
-  const fsBtn = document.getElementById('fs');
-  const stage = document.getElementById('stage');
-  const closeBtn = document.getElementById('close');
+function showSpinner(v){ spinner.hidden = !v; }
 
-  function openPlayer(m){
-    titleEl.textContent = m.title;
-    // reset both players
-    frame.src = ''; frame.style.display = 'none';
-    video.pause(); video.removeAttribute('src'); video.load(); video.style.display = 'none';
+function resetPlayers(){
+  frame.src = ''; frame.style.display = 'none';
+  video.pause(); video.removeAttribute('src'); video.load(); video.style.display = 'none';
+  dlBtn.hidden = true;
+}
 
-    // Prefer native MP4/HLS if provided
-    if(m.hls){
-      // basic HLS: many browsers (Safari) support natively; for Chrome you'd usually add hls.js (omitted here)
-      video.src = m.hls; video.style.display = 'block';
-    } else if(m.mp4){
-      video.src = m.mp4; video.style.display = 'block';
-    } else if(m.preview){
-      frame.src = m.preview; frame.style.display = 'block';
-    }
+function openPlayer(m){
+  titleEl.textContent = m.title;
+  resetPlayers();
+  showSpinner(true);
 
-    openDriveBtn.style.display = m.drivePage ? 'inline-block' : 'none';
-    openDriveBtn.onclick = ()=> m.drivePage && window.open(m.drivePage, '_blank');
-    dlg.showModal();
+  // 1) Хэрэв MP4 байгаа бол эхний сонголт
+  if(m.mp4){
+    video.src = m.mp4;
+    video.style.display = 'block';
+    dlBtn.hidden = false;
+    dlBtn.onclick = () => window.open(m.mp4, '_blank');
+    video.onloadeddata = ()=> showSpinner(false);
+    video.onerror = ()=> { // MP4 алдаа -> Drive preview рүү унах
+      if(m.preview){ frame.src = m.preview; frame.style.display = 'block'; }
+      showSpinner(false);
+    };
+  } else if(m.hls){
+    // Safari ажиллана, бусад дээр hls.js хэрэгтэй (энэ демод нэмээгүй)
+    video.src = m.hls; video.style.display = 'block';
+    video.onloadeddata = ()=> showSpinner(false);
+  } else if(m.preview){
+    frame.src = m.preview; frame.style.display = 'block';
+    frame.onload = ()=> showSpinner(false);
+  } else {
+    showSpinner(false);
   }
-  closeBtn.onclick = ()=> dlg.close();
-  dlg.addEventListener('close', ()=> { frame.src=''; video.pause(); video.removeAttribute('src'); video.load(); });
 
-  fsBtn.onclick = async ()=>{
-    try{
-      if(document.fullscreenElement){ await document.exitFullscreen(); }
-      else{ await stage.requestFullscreen(); }
-    }catch(e){ console.log(e); }
-  };
+  openDriveBtn.style.display = m.drivePage ? 'inline-block' : 'none';
+  openDriveBtn.onclick = ()=> m.drivePage && window.open(m.drivePage, '_blank');
 
-  // If inside Facebook/Instagram in-app browser, show a hint
-  (function(){
-    const ua = navigator.userAgent || '';
-    const isInApp = /(FBAN|FBAV|FB_IAB|Instagram)/i.test(ua);
-    if(isInApp){
-      const bar = document.createElement('div');
-      bar.style.cssText = 'position:sticky;top:0;z-index:50;margin:-6px 0 8px 0;padding:8px 10px;border-radius:10px;background:#111827;border:1px solid #1f2937;color:#cbd5e1;font-size:.88rem';
-      bar.textContent = 'Зарим төхөөрөмж дээр Messenger дотроос тоглуулахад асуудал гарч магадгүй. Дээрх ⋯ → Open in Browser гэж нээвэл илүү тогтвортой.';
-      document.querySelector('.container header').after(bar);
-    }
-  })();
+  dlg.showModal();
+}
 
+/* --- хаах, fullscreen, богино гарын команд --- */
+closeBtn.onclick = ()=> dlg.close();
+dlg.addEventListener('close', resetPlayers);
+
+// backdrop дээр дарахад хаах
+dlg.addEventListener('click', (e)=>{
+  const r = dlg.getBoundingClientRect();
+  // dialog гадна талбарт дарсан эсэх
+  if(!(e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom)){
+    dlg.close();
+  }
+});
+
+fsBtn.onclick = async ()=>{
+  try{
+    if(document.fullscreenElement){ await document.exitFullscreen(); }
+    else{ await stage.requestFullscreen(); }
+  }catch(e){ console.log(e); }
+};
+
+// keyboard
+window.addEventListener('keydown', (e)=>{
+  if(!dlg.open) return;
+  if(e.key === 'Escape') dlg.close();
+  if(e.key.toLowerCase() === 'f') fsBtn.click();
+  if(e.key === ' ' && !frame.style.display){ // зөвхөн video дээр
+    e.preventDefault();
+    if(video.paused) video.play(); else video.pause();
+  }
+});
+
+/* --- In-app browser анхааруулга --- */
+(function(){
+  const ua = navigator.userAgent || '';
+  const isInApp = /(FBAN|FBAV|FB_IAB|Instagram)/i.test(ua);
+  if(isInApp){
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:sticky;top:0;z-index:50;margin:-6px 0 8px 0;padding:8px 10px;border-radius:10px;background:#111827;border:1px solid #1f2937;color:#cbd5e1;font-size:.88rem';
+    bar.textContent = 'Зарим төхөөрөмж дээр Messenger/Instagram дотроос тоглуулахад асуудал гарч магадгүй. ⋯ → Open in Browser гэж нээгээрэй.';
+    document.querySelector('.container header').after(bar);
+  }
+})();
   </script>
 </body>
 </html>
