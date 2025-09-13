@@ -108,14 +108,17 @@ const MOVIES = [
   }, // ← ЭНЭ ТАСЛАЛ ШААРДЛАГАТАЙ!
 
   // Шинэ бичлэг
-  {
-    id: "хүлэг",
-    title: "окэ",
-    thumb: "https://www.youtube.com/watch?v=9l2jFRbDBro=1200",
-    mp4: "https://www.youtube.com/watch?v=9l2jFRbDBro",
-    preview: "",
-    drivePage: ""
-  }
+  // Шинэ бичлэг (YouTube дээр)
+{
+  id: "хүлэг",
+  title: "окэ",
+  // YouTube thumb: watch URL биш, статик зураг ашиглана
+  thumb: "https://img.youtube.com/vi/9l2jFRbDBro/maxresdefault.jpg", // эсвэл hqdefault.jpg
+  // Native mp4/hls ОРУУЛАХГҮЙ, харин preview-д embed URL өгнө
+  preview: "https://www.youtube-nocookie.com/embed/9l2jFRbDBro?autoplay=1&rel=0&modestbranding=1",
+  drivePage: "https://www.youtube.com/watch?v=9l2jFRbDBro"
+  // mp4: "", hls: ""  // ← хоосон орхи (ашиглахгүй)
+}
 ];
   // --- RENDER ---
   const grid = document.getElementById('grid');
